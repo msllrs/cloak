@@ -1,17 +1,334 @@
-<h2>Rectangle Creator</h2>
-<p>Count: <input id="count" type="number" value="5"></p>
-<button id="create">Create</button>
-<button id="cancel">Cancel</button>
-<script>
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    :root {
+      --figma-bg: #2c2c2c;
+      --figma-text: #ffffff;
+      --figma-secondary-text: #b3b3b3;
+      --figma-border: #444444;
+      --figma-hover: #3e3e3e;
+      --figma-active: #4b4b4b;
+      --figma-blue: #18a0fb;
+      --figma-red: #f24822;
+    }
+    
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+    
+    body {
+      background-color: var(--figma-bg);
+      color: var(--figma-text);
+      font-size: 11px;
+      padding: 0;
+      margin: 0;
+      width: 240px;
+      overflow: hidden;
+    }
+    
+    .header {
+      padding: 16px;
+      border-bottom: 1px solid var(--figma-border);
+    }
+    
+    .content {
+    }
+    
+    .dropdown {
+      position: relative;
+    }
+    
+    .dropdown-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 12px;
+      background-color: var(--figma-bg);
+      border: 1px solid var(--figma-border);
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    
+    .dropdown-header:hover {
+      background-color: var(--figma-hover);
+    }
+    
+    .dropdown-content {
+      position: absolute;
+      margin-top: 2px;
+      top: 100%;
+      left: 0;
+      width: 100%;
+      max-height: 200px;
+      overflow-y: auto;
+      background-color: var(--figma-bg);
+      border: 1px solid var(--figma-border);
+      border-radius: 4px;
+      z-index: 10;
+      display: none;
+    }
+    
+    .dropdown-content.show {
+      display: block;
+    }
+    
+    .collection-section {
+      padding: 8px 0;
+      border-bottom: 1px solid var(--figma-border);
+    }
+    
+    .collection-section:last-child {
+      border-bottom: none;
+    }
+    
+    .collection-name {
+      padding: 4px 12px;
+      font-weight: 500;
+      color: var(--figma-secondary-text);
+    }
+    
+    .mode-item {
+      display: flex;
+      align-items: center;
+      padding: 6px 12px;
+      cursor: pointer;
+    }
+    
+    .mode-item:hover {
+      background-color: var(--figma-hover);
+    }
+    
+    .mode-item input {
+      margin-right: 8px;
+    }
+    
+    .footer {
+      padding: 16px 16px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    
+    button {
+      width: 100%;
+      padding: 8px 16px;
+      background-color: var(--figma-bg);
+      color: var(--figma-text);
+      border: 1px solid var(--figma-border);
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 11px;
+      text-align: center;
+      transition: background-color 0.2s;
+    }
+    
+    button:hover {
+      background-color: var(--figma-hover);
+    }
+    
+    button.primary {
+      background-color: var(--figma-blue);
+      border-color: var(--figma-blue);
+    }
+    
+    button.primary:hover {
+      background-color: #0d8ee9;
+    }
+    
+    button.danger {
+      color: var(--figma-red);
+      border-color: var(--figma-red);
+    }
+    
+    button.danger:hover {
+      background-color: rgba(242, 72, 34, 0.1);
+    }
+    
+    .empty-state {
+      padding: 16px;
+      text-align: center;
+      color: var(--figma-secondary-text);
+    }
+    
+    .chevron {
+      border: solid var(--figma-secondary-text);
+      border-width: 0 2px 2px 0;
+      display: inline-block;
+      padding: 2px;
+      transition: transform 0.1s;
+    }
+    
+    .chevron-down {
+      transform: rotate(45deg);
+    }
+    
+    .chevron-up {
+      transform: rotate(-135deg);
+    }
+    
+    .selected-count {
+      background-color: var(--figma-blue);
+      color: white;
+      border-radius: 10px;
+      padding: 1px 6px;
+      font-size: 9px;
+      margin-left: 6px;
+      display: none;
+    }
+    
+    .selected-count.show {
+      display: inline-block;
+    }
+  </style>
+</head>
+<body>
+<div class="header">
+  <div class="content">
+    <div class="dropdown">
+      <div class="dropdown-header" id="dropdown-toggle">
+        <span>Select modes <span id="selected-count" class="selected-count">0</span></span>
+        <span class="chevron chevron-down" id="dropdown-chevron"></span>
+      </div>
+      <div class="dropdown-content" id="dropdown-content">
+        <!-- Collections and modes will be populated here -->
+      </div>
+    </div>
+  </div>
+</div>
+  
+  <div class="footer">
+    <button id="hide" class="primary">Hide selected modes</button>
+    <button id="restore">Restore hidden modes</button>
+  </div>
 
-document.getElementById('create').onclick = () => {
-  const textbox = document.getElementById('count');
-  const count = parseInt(textbox.value, 10);
-  parent.postMessage({ pluginMessage: { type: 'create-shapes', count } }, '*')
-}
+  <script>
+    // Toggle dropdown
+    const dropdownToggle = document.getElementById('dropdown-toggle');
+    const dropdownContent = document.getElementById('dropdown-content');
+    const dropdownChevron = document.getElementById('dropdown-chevron');
+    const selectedCountEl = document.getElementById('selected-count');
+    
+    dropdownToggle.addEventListener('click', () => {
+      dropdownContent.classList.toggle('show');
+      dropdownChevron.classList.toggle('chevron-down');
+      dropdownChevron.classList.toggle('chevron-up');
+    });
+    
+    // Close dropdown when clicking outside
+    window.addEventListener('click', (event) => {
+      if (!event.target.closest('.dropdown')) {
+        dropdownContent.classList.remove('show');
+        dropdownChevron.classList.add('chevron-down');
+        dropdownChevron.classList.remove('chevron-up');
+      }
+    });
+    
+    // Update selected count
+    function updateSelectedCount() {
+      const selectedCount = document.querySelectorAll('input:checked').length;
+      selectedCountEl.textContent = selectedCount;
+      
+      if (selectedCount > 0) {
+        selectedCountEl.classList.add('show');
+      } else {
+        selectedCountEl.classList.remove('show');
+      }
+    }
+    
+    // Listen for messages from the plugin code
+    window.onmessage = (event) => {
+      const { type, data } = event.data.pluginMessage;
+      
+      if (type === "load-modes") {
+        const container = document.getElementById("dropdown-content");
+        container.innerHTML = "";
+        
+        if (data.length === 0) {
+          container.innerHTML = '<div class="empty-state">No variable collections found</div>';
+          return;
+        }
+        
+        // Create UI elements for each collection and its modes
+        data.forEach(collection => {
+          const section = document.createElement("div");
+          section.className = "collection-section";
+          
+          const collectionName = document.createElement("div");
+          collectionName.className = "collection-name";
+          collectionName.textContent = collection.name;
+          section.appendChild(collectionName);
+          
+          // Add modes for this collection
+          if (collection.modes.length > 0) {
+            collection.modes.forEach(mode => {
+              const modeItem = document.createElement("label");
+              modeItem.className = "mode-item";
+              
+              const checkbox = document.createElement("input");
+              checkbox.type = "checkbox";
+              checkbox.value = `${collection.id}|${mode.id}`;
+              checkbox.addEventListener('change', updateSelectedCount);
+              
+              const modeLabel = document.createTextNode(mode.name);
+              
+              modeItem.appendChild(checkbox);
+              modeItem.appendChild(modeLabel);
+              section.appendChild(modeItem);
+            });
+          } else {
+            const noModes = document.createElement("div");
+            noModes.className = "empty-state";
+            noModes.textContent = "No modes in this collection";
+            section.appendChild(noModes);
+          }
+          
+          container.appendChild(section);
+        });
+      }
+    };
 
-document.getElementById('cancel').onclick = () => {
-  parent.postMessage({ pluginMessage: { type: 'cancel' } }, '*')
-}
+    // Set up button click handlers
+    document.getElementById("hide").onclick = () => {
+      const selections = Array.from(document.querySelectorAll("input:checked"))
+        .map(input => {
+          const [collectionId, modeId] = input.value.split("|");
+          return { collectionId, modeId };
+        });
+      
+      if (selections.length === 0) {
+        alert("Please select at least one mode to hide");
+        return;
+      }
 
-</script>
+      parent.postMessage({ 
+        pluginMessage: { 
+          type: "hide-modes", 
+          data: selections 
+        } 
+      }, "*");
+      
+      // Close the dropdown after selection
+      dropdownContent.classList.remove('show');
+      dropdownChevron.classList.add('chevron-down');
+      dropdownChevron.classList.remove('chevron-up');
+      
+      // Reset the selected count
+      selectedCountEl.textContent = "0";
+      selectedCountEl.classList.remove('show');
+    };
+
+    document.getElementById("restore").onclick = () => {
+      parent.postMessage({ 
+        pluginMessage: { 
+          type: "restore-modes" 
+        } 
+      }, "*");
+    };
+
+  </script>
+</body>
+</html>

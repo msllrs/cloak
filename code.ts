@@ -1,37 +1,156 @@
-// This plugin will open a window to prompt the user to enter a number, and
-// it will then create that many rectangles on the screen.
+// Store the modes that were deleted for restoration
+let deletedModes: {collectionId: string, modeId: string, modeName: string}[] = [];
 
-// This file holds the main code for plugins. Code in this file has access to
-// the *figma document* via the figma global object.
-// You can access browser APIs in the <script> tag inside "ui.html" which has a
-// full browser environment (See https://www.figma.com/plugin-docs/how-plugins-run).
+figma.showUI(__html__, { width: 240, height: 268 });
 
-// This shows the HTML page in "ui.html".
-figma.showUI(__html__);
+// Step 1: Send all variable modes to the UI
+async function loadModes() {
+  try {
+    const variableCollections = await figma.variables.getLocalVariableCollectionsAsync();
+    const modeData = variableCollections.map(collection => ({
+      id: collection.id,
+      name: collection.name,
+      modes: collection.modes.map(mode => ({ id: mode.modeId, name: mode.name }))
+    }));
 
-// Calls to "parent.postMessage" from within the HTML page will trigger this
-// callback. The callback will be passed the "pluginMessage" property of the
-// posted message.
-figma.ui.onmessage =  (msg: {type: string, count: number}) => {
-  // One way of distinguishing between different types of messages sent from
-  // your HTML page is to use an object with a "type" property like this.
-  if (msg.type === 'create-shapes') {
-    // This plugin creates rectangles on the screen.
-    const numberOfRectangles = msg.count;
+    figma.ui.postMessage({ type: "load-modes", data: modeData });
+  } catch (err) {
+    const error = err as Error;
+    figma.notify(`Error loading modes: ${error.message}`, { error: true });
+    console.error("Error loading modes:", error);
+  }
+}
 
-    const nodes: SceneNode[] = [];
-    for (let i = 0; i < numberOfRectangles; i++) {
-      const rect = figma.createRectangle();
-      rect.x = i * 150;
-      rect.fills = [{ type: 'SOLID', color: { r: 1, g: 0.5, b: 0 } }];
-      figma.currentPage.appendChild(rect);
-      nodes.push(rect);
+loadModes();
+
+// Step 2: Handle UI interactions
+figma.ui.onmessage = async (msg) => {
+  if (msg.type === "hide-modes") {
+    try {
+      // Reset stored data
+      deletedModes = [];
+      
+      // For each selected mode
+      for (const { collectionId, modeId } of msg.data) {
+        console.log(`Attempting to hide mode: ${modeId} from collection: ${collectionId}`);
+        
+        // Use the async version of getVariableCollectionById
+        const collection = await figma.variables.getVariableCollectionByIdAsync(collectionId);
+        if (!collection) {
+          console.error(`Collection not found: ${collectionId}`);
+          continue;
+        }
+        
+        console.log(`Collection found: ${collection.name}`);
+        console.log(`Collection modes:`, collection.modes);
+        
+        // Find the mode to delete
+        const modeToDelete = collection.modes.find(m => m.modeId === modeId);
+        if (!modeToDelete) {
+          console.error(`Mode not found: ${modeId}`);
+          continue;
+        }
+        
+        console.log(`Mode found: ${modeToDelete.name} (${modeToDelete.modeId})`);
+        
+        // Store the mode data for restoration
+        deletedModes.push({
+          collectionId,
+          modeId,
+          modeName: modeToDelete.name
+        });
+        
+        // Check if this is the only mode in the collection
+        if (collection.modes.length <= 1) {
+          figma.notify(`Cannot delete the only mode in collection "${collection.name}"`, { error: true });
+          console.error(`Cannot delete the only mode in collection "${collection.name}"`);
+          continue;
+        }
+        
+        try {
+          // Try renaming first to confirm we can access the mode
+          const originalName = modeToDelete.name;
+          collection.renameMode(modeId, `${originalName}_temp`);
+          console.log(`Successfully renamed mode to ${originalName}_temp`);
+          
+          // Now try to remove the mode
+          collection.removeMode(modeId);
+          console.log(`Successfully removed mode ${modeId}`);
+          
+          // Verify the mode was removed
+          const modeStillExists = collection.modes.some(m => m.modeId === modeId);
+          console.log(`Mode still exists after removal: ${modeStillExists}`);
+          
+          if (modeStillExists) {
+            figma.notify(`Failed to remove mode "${originalName}" - it still exists after removal`, { error: true });
+          } else {
+            figma.notify(`Mode "${originalName}" hidden successfully`);
+          }
+        } catch (err) {
+          const error = err as Error;
+          figma.notify(`Error removing mode: ${error.message}`, { error: true });
+          console.error(`Error removing mode: ${error.message}`);
+        }
+      }
+      
+      if (deletedModes.length > 0) {
+        figma.notify(`${deletedModes.length} mode(s) hidden. Now publish the library.`);
+      } else {
+        figma.notify("No modes were hidden.");
+      }
+    } catch (err) {
+      const error = err as Error;
+      figma.notify(`Error hiding modes: ${error.message}`, { error: true });
+      console.error("Error hiding modes:", error);
     }
-    figma.currentPage.selection = nodes;
-    figma.viewport.scrollAndZoomIntoView(nodes);
   }
 
-  // Make sure to close the plugin when you're done. Otherwise the plugin will
-  // keep running, which shows the cancel button at the bottom of the screen.
-  figma.closePlugin();
+  if (msg.type === "restore-modes") {
+    try {
+      let restoredCount = 0;
+      
+      // For each deleted mode
+      for (const { collectionId, modeId, modeName } of deletedModes) {
+        console.log(`Attempting to restore mode: ${modeName} to collection: ${collectionId}`);
+        
+        // Use the async version of getVariableCollectionById
+        const collection = await figma.variables.getVariableCollectionByIdAsync(collectionId);
+        if (!collection) {
+          console.error(`Collection not found for restoration: ${collectionId}`);
+          continue;
+        }
+        
+        console.log(`Collection found for restoration: ${collection.name}`);
+        
+        try {
+          // Add the mode back to the collection using the addMode method
+          const newModeId = collection.addMode(modeName);
+          console.log(`Successfully added mode ${modeName} with new ID: ${newModeId}`);
+          restoredCount++;
+        } catch (err) {
+          const error = err as Error;
+          figma.notify(`Error adding mode: ${error.message}`, { error: true });
+          console.error(`Error adding mode: ${error.message}`);
+        }
+      }
+      
+      if (restoredCount > 0) {
+        figma.notify(`${restoredCount} mode(s) restored.`);
+        deletedModes = []; // Clear the deleted modes list
+        
+        // Reload the modes list
+        loadModes();
+      } else {
+        figma.notify("No modes were restored.");
+      }
+    } catch (err) {
+      const error = err as Error;
+      figma.notify(`Error restoring modes: ${error.message}`, { error: true });
+      console.error("Error restoring modes:", error);
+    }
+  }
+
+  if (msg.type === "close") {
+    figma.closePlugin();
+  }
 };
